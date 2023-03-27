@@ -1,3 +1,10 @@
-.phpunit.result.cache
-composer.lock
-vendor
+
+/reports/
+
+/vendor/
+/composer.lock
+
+/phpcs.xml
+
+/.phpunit.cache/
+/phpunit.xml

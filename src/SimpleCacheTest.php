@@ -1,6 +1,8 @@
 <?php
 
-/*
+declare(strict_types = 1);
+
+/**
  * This file is part of php-cache organization.
  *
  * (c) 2015-2015 Aaron Scherer <aequasi@gmail.com>, Tobias Nyholm <tobias.nyholm@gmail.com>
@@ -13,23 +15,27 @@ namespace Cache\IntegrationTests;
 
 use PHPUnit\Framework\TestCase;
 use Psr\SimpleCache\CacheInterface;
+use Psr\SimpleCache\InvalidArgumentException;
 
 abstract class SimpleCacheTest extends TestCase
 {
     /**
-     * @type array with functionName => reason.
+     * With functionName => reason.
+     *
+     * @phpstan-var array<string, string>
      */
-    protected $skippedTests = [];
+    protected array $skippedTests = [];
 
-    /**
-     * @type CacheInterface
-     */
-    protected $cache;
+    protected ?CacheInterface $cache = null;
 
-    /**
-     * @return CacheInterface that is used in the tests
-     */
-    abstract public function createSimpleCache();
+    protected function skipIf(string $function): void
+    {
+        if (isset($this->skippedTests[$function])) {
+            static::markTestSkipped($this->skippedTests[$function]);
+        }
+    }
+
+    abstract public function createSimpleCache(): CacheInterface;
 
     /**
      * Advance time perceived by the cache for the purposes of testing TTL.
@@ -38,12 +44,12 @@ abstract class SimpleCacheTest extends TestCase
      * but subclasses are encouraged to override this,
      * adjusting a mocked time possibly set up in {@link createSimpleCache()},
      * to speed up the tests.
-     *
-     * @param int $seconds
      */
-    public function advanceTime($seconds)
+    public function advanceTime(int $seconds): static
     {
         sleep($seconds);
+
+        return $this;
     }
 
     /**
@@ -59,20 +65,16 @@ abstract class SimpleCacheTest extends TestCase
      */
     public function tearDownService()
     {
-        if ($this->cache !== null) {
-            $this->cache->clear();
-        }
+        $this->cache?->clear();
     }
 
     /**
      * Data provider for invalid cache keys.
-     *
-     * @return array
      */
-    public static function invalidKeys()
+    public static function invalidKeys(): array
     {
         return array_merge(
-            self::invalidArrayKeys(),
+            static::invalidArrayKeys(),
             [
                 [2],
             ]
@@ -81,57 +83,35 @@ abstract class SimpleCacheTest extends TestCase
 
     /**
      * Data provider for invalid array keys.
-     *
-     * @return array
      */
-    public static function invalidArrayKeys()
+    public static function invalidArrayKeys(): array
     {
-        return [
-            [''],
-            [true],
-            [false],
-            [null],
-            [2.5],
-            ['{str'],
-            ['rand{'],
-            ['rand{str'],
-            ['rand}str'],
-            ['rand(str'],
-            ['rand)str'],
-            ['rand/str'],
-            ['rand\\str'],
-            ['rand@str'],
-            ['rand:str'],
-            [new \stdClass()],
-            [['array']],
+        $cases = [
+            'bool true' => [true],
+            'bool false' => [false],
+            'null' => [null],
+            'object' => [new \stdClass()],
+            'array' => [['array']],
+            'string empty' => [''],
         ];
-    }
 
-    /**
-     * @return array
-     */
-    public static function invalidTtl()
-    {
-        return [
-            [''],
-            [true],
-            [false],
-            ['abc'],
-            [2.5],
-            [' 1'], // can be casted to a int
-            ['12foo'], // can be casted to a int
-            ['025'], // can be interpreted as hex
-            [new \stdClass()],
-            [['array']],
-        ];
+        $invalidChars = ['{', '}', '(', ')', '/', '\\', '@', ':'];
+        foreach ($invalidChars as $char) {
+            $cases += [
+                "string forbidden char $char only" => [$char],
+                "string forbidden char $char begin" => ["{$char}foo"],
+                "string forbidden char $char middle" => ["foo{$char}bar"],
+                "string forbidden char $char end" => ["foo{$char}"],
+            ];
+        }
+
+        return $cases;
     }
 
     /**
      * Data provider for valid keys.
-     *
-     * @return array
      */
-    public static function validKeys()
+    public static function validKeys(): array
     {
         return [
             ['AbC19_.'],
@@ -141,10 +121,8 @@ abstract class SimpleCacheTest extends TestCase
 
     /**
      * Data provider for valid data to store.
-     *
-     * @return array
      */
-    public static function validData()
+    public static function validData(): array
     {
         return [
             ['AbC19_.'],
@@ -157,153 +135,131 @@ abstract class SimpleCacheTest extends TestCase
         ];
     }
 
-    public function testSet()
+    public function testSet(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $result = $this->cache->set('key', 'value');
-        $this->assertTrue($result, 'set() must return true if success');
-        $this->assertEquals('value', $this->cache->get('key'));
+        static::assertTrue($result, 'set() must return true if success');
+        static::assertEquals('value', $this->cache->get('key'));
     }
 
     /**
      * @medium
      */
-    public function testSetTtl()
+    public function testSetTtl(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $result = $this->cache->set('key1', 'value', 2);
-        $this->assertTrue($result, 'set() must return true if success');
-        $this->assertEquals('value', $this->cache->get('key1'));
+        static::assertTrue($result, 'set() must return true if success');
+        static::assertEquals('value', $this->cache->get('key1'));
 
         $this->cache->set('key2', 'value', new \DateInterval('PT2S'));
-        $this->assertEquals('value', $this->cache->get('key2'));
+        static::assertEquals('value', $this->cache->get('key2'));
 
         $this->advanceTime(3);
 
-        $this->assertNull($this->cache->get('key1'), 'Value must expire after ttl.');
-        $this->assertNull($this->cache->get('key2'), 'Value must expire after ttl.');
+        static::assertNull($this->cache->get('key1'), 'Value must expire after ttl.');
+        static::assertNull($this->cache->get('key2'), 'Value must expire after ttl.');
     }
 
-    public function testSetExpiredTtl()
+    public function testSetExpiredTtl(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->set('key0', 'value');
         $this->cache->set('key0', 'value', 0);
-        $this->assertNull($this->cache->get('key0'));
-        $this->assertFalse($this->cache->has('key0'));
+        static::assertNull($this->cache->get('key0'));
+        static::assertFalse($this->cache->has('key0'));
 
         $this->cache->set('key1', 'value', -1);
-        $this->assertNull($this->cache->get('key1'));
-        $this->assertFalse($this->cache->has('key1'));
+        static::assertNull($this->cache->get('key1'));
+        static::assertFalse($this->cache->has('key1'));
     }
 
-    public function testGet()
+    public function testGet(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->assertNull($this->cache->get('key'));
-        $this->assertEquals('foo', $this->cache->get('key', 'foo'));
+        static::assertNull($this->cache->get('key'));
+        static::assertEquals('foo', $this->cache->get('key', 'foo'));
 
         $this->cache->set('key', 'value');
-        $this->assertEquals('value', $this->cache->get('key', 'foo'));
+        static::assertEquals('value', $this->cache->get('key', 'foo'));
     }
 
-    public function testDelete()
+    public function testDelete(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->assertTrue($this->cache->delete('key'), 'Deleting a value that does not exist should return true');
+        static::assertTrue($this->cache->delete('key'), 'Deleting a value that does not exist should return true');
         $this->cache->set('key', 'value');
-        $this->assertTrue($this->cache->delete('key'), 'Delete must return true on success');
-        $this->assertNull($this->cache->get('key'), 'Values must be deleted on delete()');
+        static::assertTrue($this->cache->delete('key'), 'Delete must return true on success');
+        static::assertNull($this->cache->get('key'), 'Values must be deleted on delete()');
     }
 
-    public function testClear()
+    public function testClear(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->assertTrue($this->cache->clear(), 'Clearing an empty cache should return true');
+        static::assertTrue($this->cache->clear(), 'Clearing an empty cache should return true');
         $this->cache->set('key', 'value');
-        $this->assertTrue($this->cache->clear(), 'Delete must return true on success');
-        $this->assertNull($this->cache->get('key'), 'Values must be deleted on clear()');
+        static::assertTrue($this->cache->clear(), 'Delete must return true on success');
+        static::assertNull($this->cache->get('key'), 'Values must be deleted on clear()');
     }
 
-    public function testSetMultiple()
+    public function testSetMultiple(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $result = $this->cache->setMultiple(['key0' => 'value0', 'key1' => 'value1']);
-        $this->assertTrue($result, 'setMultiple() must return true if success');
-        $this->assertEquals('value0', $this->cache->get('key0'));
-        $this->assertEquals('value1', $this->cache->get('key1'));
+        static::assertTrue($result, 'setMultiple() must return true if success');
+        static::assertEquals('value0', $this->cache->get('key0'));
+        static::assertEquals('value1', $this->cache->get('key1'));
     }
 
-    public function testSetMultipleWithIntegerArrayKey()
+    public function testSetMultipleWithIntegerArrayKey(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $result = $this->cache->setMultiple(['0' => 'value0']);
-        $this->assertTrue($result, 'setMultiple() must return true if success');
-        $this->assertEquals('value0', $this->cache->get('0'));
+        static::assertTrue($result, 'setMultiple() must return true if success');
+        static::assertEquals('value0', $this->cache->get('0'));
     }
 
     /**
      * @medium
      */
-    public function testSetMultipleTtl()
+    public function testSetMultipleTtl(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->setMultiple(['key2' => 'value2', 'key3' => 'value3'], 2);
-        $this->assertEquals('value2', $this->cache->get('key2'));
-        $this->assertEquals('value3', $this->cache->get('key3'));
+        static::assertEquals('value2', $this->cache->get('key2'));
+        static::assertEquals('value3', $this->cache->get('key3'));
 
         $this->cache->setMultiple(['key4' => 'value4'], new \DateInterval('PT2S'));
-        $this->assertEquals('value4', $this->cache->get('key4'));
+        static::assertEquals('value4', $this->cache->get('key4'));
 
         $this->advanceTime(3);
-        $this->assertNull($this->cache->get('key2'), 'Value must expire after ttl.');
-        $this->assertNull($this->cache->get('key3'), 'Value must expire after ttl.');
-        $this->assertNull($this->cache->get('key4'), 'Value must expire after ttl.');
+        static::assertNull($this->cache->get('key2'), 'Value must expire after ttl.');
+        static::assertNull($this->cache->get('key3'), 'Value must expire after ttl.');
+        static::assertNull($this->cache->get('key4'), 'Value must expire after ttl.');
     }
 
-    public function testSetMultipleExpiredTtl()
+    public function testSetMultipleExpiredTtl(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->setMultiple(['key0' => 'value0', 'key1' => 'value1'], 0);
-        $this->assertNull($this->cache->get('key0'));
-        $this->assertNull($this->cache->get('key1'));
+        static::assertNull($this->cache->get('key0'));
+        static::assertNull($this->cache->get('key1'));
     }
 
-    public function testSetMultipleWithGenerator()
+    public function testSetMultipleWithGenerator(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $gen = function () {
             yield 'key0' => 'value0';
@@ -311,45 +267,41 @@ abstract class SimpleCacheTest extends TestCase
         };
 
         $this->cache->setMultiple($gen());
-        $this->assertEquals('value0', $this->cache->get('key0'));
-        $this->assertEquals('value1', $this->cache->get('key1'));
+        static::assertEquals('value0', $this->cache->get('key0'));
+        static::assertEquals('value1', $this->cache->get('key1'));
     }
 
-    public function testGetMultiple()
+    public function testGetMultiple(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $result = $this->cache->getMultiple(['key0', 'key1']);
-        $keys   = [];
+        $keys = [];
         foreach ($result as $i => $r) {
             $keys[] = $i;
-            $this->assertNull($r);
+            static::assertNull($r);
         }
         sort($keys);
-        $this->assertSame(['key0', 'key1'], $keys);
+        static::assertSame(['key0', 'key1'], $keys);
 
         $this->cache->set('key3', 'value');
         $result = $this->cache->getMultiple(['key2', 'key3', 'key4'], 'foo');
-        $keys   = [];
+        $keys = [];
         foreach ($result as $key => $r) {
             $keys[] = $key;
             if ($key === 'key3') {
-                $this->assertEquals('value', $r);
+                static::assertEquals('value', $r);
             } else {
-                $this->assertEquals('foo', $r);
+                static::assertEquals('foo', $r);
             }
         }
         sort($keys);
-        $this->assertSame(['key2', 'key3', 'key4'], $keys);
+        static::assertSame(['key2', 'key3', 'key4'], $keys);
     }
 
-    public function testGetMultipleWithGenerator()
+    public function testGetMultipleWithGenerator(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $gen = function () {
             yield 1 => 'key0';
@@ -358,332 +310,327 @@ abstract class SimpleCacheTest extends TestCase
 
         $this->cache->set('key0', 'value0');
         $result = $this->cache->getMultiple($gen());
-        $keys   = [];
+        $keys = [];
         foreach ($result as $key => $r) {
             $keys[] = $key;
             if ($key === 'key0') {
-                $this->assertEquals('value0', $r);
+                static::assertEquals('value0', $r);
             } elseif ($key === 'key1') {
-                $this->assertNull($r);
+                static::assertNull($r);
             } else {
-                $this->assertFalse(true, 'This should not happend');
+                static::assertFalse(true, 'This should not happend');
             }
         }
         sort($keys);
-        $this->assertSame(['key0', 'key1'], $keys);
-        $this->assertEquals('value0', $this->cache->get('key0'));
-        $this->assertNull($this->cache->get('key1'));
+        static::assertSame(['key0', 'key1'], $keys);
+        static::assertEquals('value0', $this->cache->get('key0'));
+        static::assertNull($this->cache->get('key1'));
     }
 
-    public function testDeleteMultiple()
+    public function testDeleteMultiple(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->assertTrue($this->cache->deleteMultiple([]), 'Deleting a empty array should return true');
-        $this->assertTrue($this->cache->deleteMultiple(['key']), 'Deleting a value that does not exist should return true');
+        static::assertTrue(
+            $this->cache->deleteMultiple([]),
+            'Deleting a empty array should return true',
+        );
+        static::assertTrue(
+            $this->cache->deleteMultiple(['key']),
+            'Deleting a value that does not exist should return true',
+        );
 
         $this->cache->set('key0', 'value0');
         $this->cache->set('key1', 'value1');
-        $this->assertTrue($this->cache->deleteMultiple(['key0', 'key1']), 'Delete must return true on success');
-        $this->assertNull($this->cache->get('key0'), 'Values must be deleted on deleteMultiple()');
-        $this->assertNull($this->cache->get('key1'), 'Values must be deleted on deleteMultiple()');
+        static::assertTrue($this->cache->deleteMultiple(['key0', 'key1']), 'Delete must return true on success');
+        static::assertNull($this->cache->get('key0'), 'Values must be deleted on deleteMultiple()');
+        static::assertNull($this->cache->get('key1'), 'Values must be deleted on deleteMultiple()');
     }
 
-    public function testDeleteMultipleGenerator()
+    public function testDeleteMultipleGenerator(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $gen = function () {
             yield 1 => 'key0';
             yield 1 => 'key1';
         };
         $this->cache->set('key0', 'value0');
-        $this->assertTrue($this->cache->deleteMultiple($gen()), 'Deleting a generator should return true');
+        static::assertTrue($this->cache->deleteMultiple($gen()), 'Deleting a generator should return true');
 
-        $this->assertNull($this->cache->get('key0'), 'Values must be deleted on deleteMultiple()');
-        $this->assertNull($this->cache->get('key1'), 'Values must be deleted on deleteMultiple()');
+        static::assertNull($this->cache->get('key0'), 'Values must be deleted on deleteMultiple()');
+        static::assertNull($this->cache->get('key1'), 'Values must be deleted on deleteMultiple()');
     }
 
-    public function testHas()
+    public function testHas(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->assertFalse($this->cache->has('key0'));
+        static::assertFalse($this->cache->has('key0'));
         $this->cache->set('key0', 'value0');
-        $this->assertTrue($this->cache->has('key0'));
+        static::assertTrue($this->cache->has('key0'));
     }
 
-    public function testBasicUsageWithLongKey()
+    public function testBasicUsageWithLongKey(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $key = str_repeat('a', 300);
 
-        $this->assertFalse($this->cache->has($key));
-        $this->assertTrue($this->cache->set($key, 'value'));
+        static::assertFalse($this->cache->has($key));
+        static::assertTrue($this->cache->set($key, 'value'));
 
-        $this->assertTrue($this->cache->has($key));
-        $this->assertSame('value', $this->cache->get($key));
+        static::assertTrue($this->cache->has($key));
+        static::assertSame('value', $this->cache->get($key));
 
-        $this->assertTrue($this->cache->delete($key));
+        static::assertTrue($this->cache->delete($key));
 
-        $this->assertFalse($this->cache->has($key));
+        static::assertFalse($this->cache->has($key));
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testGetInvalidKeys($key)
+    public function testGetInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
+        $this->skipIf(__FUNCTION__);
+
+        try {
+            $this->cache->get($key);
+        } catch (InvalidArgumentException | \TypeError $e) {
+            static::assertTrue(true);
+
+            return;
+        } catch (\Throwable $e) {
+            static::fail(sprintf(
+                '::get() throws an unexpected %s exception with key',
+                get_class($e),
+            ));
         }
 
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->get($key);
+        static::fail('::get() should throw an exception with key');
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testGetMultipleInvalidKeys($key)
+    public function testGetMultipleInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
+        $this->skipIf(__FUNCTION__);
+
+        try {
+            $this->cache->getMultiple(['key1', $key, 'key2']);
+        } catch (InvalidArgumentException | \TypeError $e) {
+            static::assertTrue(true);
+
+            return;
+        } catch (\Throwable $e) {
+            static::fail(sprintf(
+                '::getMultiple() throws an unexpected %s exception with key',
+                get_class($e),
+            ));
         }
 
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $result = $this->cache->getMultiple(['key1', $key, 'key2']);
-    }
-
-    public function testGetMultipleNoIterable()
-    {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
-
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $result = $this->cache->getMultiple('key');
+        static::fail('::getMultiple() should throw an exception with key');
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testSetInvalidKeys($key)
+    public function testSetInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
+        $this->skipIf(__FUNCTION__);
+
+        try {
+            $this->cache->set($key, 'foobar');
+        } catch (InvalidArgumentException | \TypeError $e) {
+            static::assertTrue(true);
+
+            return;
+        } catch (\Throwable $e) {
+            static::fail(sprintf(
+                '::set() throws an unexpected %s exception with key',
+                get_class($e),
+            ));
         }
 
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->set($key, 'foobar');
+        static::fail('::set() should throw an exception with key');
     }
 
     /**
      * @dataProvider invalidArrayKeys
      */
-    public function testSetMultipleInvalidKeys($key)
+    public function testSetMultipleInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
-
+        $this->skipIf(__FUNCTION__);
         $values = function () use ($key) {
             yield 'key1' => 'foo';
             yield $key => 'bar';
             yield 'key2' => 'baz';
         };
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->setMultiple($values());
-    }
 
-    public function testSetMultipleNoIterable()
-    {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
+        try {
+            $this->cache->setMultiple($values());
+        } catch (InvalidArgumentException | \TypeError $e) {
+            static::assertTrue(true);
+
+            return;
+        } catch (\Throwable $e) {
+            static::fail(sprintf(
+                '::setMultiple() throws an unexpected %s exception with key',
+                get_class($e),
+            ));
         }
 
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->setMultiple('key');
-    }
-
-    /**
-     * @dataProvider invalidKeys
-     */
-    public function testHasInvalidKeys($key)
-    {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
-
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->has($key);
+        static::fail('::setMultiple() should throw an exception with key');
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testDeleteInvalidKeys($key)
+    public function testHasInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->delete($key);
+        try {
+            $this->cache->has($key);
+        } catch (InvalidArgumentException | \TypeError $e) {
+            static::assertTrue(true);
+
+            return;
+        } catch (\Throwable $e) {
+            static::fail(sprintf(
+                '::has() throws an unexpected %s exception with key',
+                get_class($e),
+            ));
+        }
+        static::fail('::has() should throw an exception with key');
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testDeleteMultipleInvalidKeys($key)
+    public function testDeleteInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
+        $this->skipIf(__FUNCTION__);
+
+        try {
+            $this->cache->delete($key);
+        } catch (InvalidArgumentException | \TypeError $e) {
+            static::assertTrue(true);
+
+            return;
+        } catch (\Throwable $e) {
+            static::fail(sprintf(
+                '::delete() throws an unexpected %s exception with key',
+                get_class($e),
+            ));
         }
 
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->deleteMultiple(['key1', $key, 'key2']);
-    }
-
-    public function testDeleteMultipleNoIterable()
-    {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
-
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->deleteMultiple('key');
-    }
-
-    /**
-     * @dataProvider invalidTtl
-     */
-    public function testSetInvalidTtl($ttl)
-    {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
-
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->set('key', 'value', $ttl);
+        static::fail('::delete() should throw an exception with key');
     }
 
     /**
-     * @dataProvider invalidTtl
+     * @dataProvider invalidKeys
      */
-    public function testSetMultipleInvalidTtl($ttl)
+    public function testDeleteMultipleInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
+        $this->skipIf(__FUNCTION__);
+
+        try {
+            $this->cache->deleteMultiple(['key1', $key, 'key2']);
+        } catch (InvalidArgumentException | \TypeError $e) {
+            static::assertTrue(true);
+
+            return;
+        } catch (\Throwable $e) {
+            static::fail(sprintf(
+                '::deleteMultiple() throws an unexpected %s exception with key',
+                get_class($e),
+            ));
         }
 
-        $this->expectException('Psr\SimpleCache\InvalidArgumentException');
-        $this->cache->setMultiple(['key' => 'value'], $ttl);
+        static::fail('::deleteMultiple() should throw an exception with key');
     }
 
-    public function testNullOverwrite()
+    public function testNullOverwrite(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->set('key', 5);
         $this->cache->set('key', null);
 
-        $this->assertNull($this->cache->get('key'), 'Setting null to a key must overwrite previous value');
+        static::assertNull($this->cache->get('key'), 'Setting null to a key must overwrite previous value');
     }
 
-    public function testDataTypeString()
+    public function testDataTypeString(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->set('key', '5');
         $result = $this->cache->get('key');
-        $this->assertTrue('5' === $result, 'Wrong data type. If we store a string we must get an string back.');
-        $this->assertTrue(is_string($result), 'Wrong data type. If we store a string we must get an string back.');
+        static::assertTrue('5' === $result, 'Wrong data type. If we store a string we must get an string back.');
+        static::assertTrue(is_string($result), 'Wrong data type. If we store a string we must get an string back.');
     }
 
-    public function testDataTypeInteger()
+    public function testDataTypeInteger(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->set('key', 5);
         $result = $this->cache->get('key');
-        $this->assertTrue(5 === $result, 'Wrong data type. If we store an int we must get an int back.');
-        $this->assertTrue(is_int($result), 'Wrong data type. If we store an int we must get an int back.');
+        static::assertTrue(5 === $result, 'Wrong data type. If we store an int we must get an int back.');
+        static::assertTrue(is_int($result), 'Wrong data type. If we store an int we must get an int back.');
     }
 
-    public function testDataTypeFloat()
+    public function testDataTypeFloat(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $float = 1.23456789;
         $this->cache->set('key', $float);
         $result = $this->cache->get('key');
-        $this->assertTrue(is_float($result), 'Wrong data type. If we store float we must get an float back.');
-        $this->assertEquals($float, $result);
+        static::assertTrue(is_float($result), 'Wrong data type. If we store float we must get an float back.');
+        static::assertEquals($float, $result);
     }
 
-    public function testDataTypeBoolean()
+    public function testDataTypeBoolean(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->set('key', false);
         $result = $this->cache->get('key');
-        $this->assertTrue(is_bool($result), 'Wrong data type. If we store boolean we must get an boolean back.');
-        $this->assertFalse($result);
-        $this->assertTrue($this->cache->has('key'), 'has() should return true when true are stored. ');
+        static::assertTrue(is_bool($result), 'Wrong data type. If we store boolean we must get an boolean back.');
+        static::assertFalse($result);
+        static::assertTrue($this->cache->has('key'), 'has() should return true when true are stored. ');
     }
 
-    public function testDataTypeArray()
+    public function testDataTypeArray(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $array = ['a' => 'foo', 2 => 'bar'];
         $this->cache->set('key', $array);
         $result = $this->cache->get('key');
-        $this->assertTrue(is_array($result), 'Wrong data type. If we store array we must get an array back.');
-        $this->assertEquals($array, $result);
+        static::assertTrue(is_array($result), 'Wrong data type. If we store array we must get an array back.');
+        static::assertEquals($array, $result);
     }
 
-    public function testDataTypeObject()
+    public function testDataTypeObject(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $object    = new \stdClass();
+        $object = new \stdClass();
         $object->a = 'foo';
         $this->cache->set('key', $object);
         $result = $this->cache->get('key');
-        $this->assertTrue(is_object($result), 'Wrong data type. If we store object we must get an object back.');
-        $this->assertEquals($object, $result);
+        static::assertTrue(is_object($result), 'Wrong data type. If we store object we must get an object back.');
+        static::assertEquals($object, $result);
     }
 
-    public function testBinaryData()
+    public function testBinaryData(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $data = '';
         for ($i = 0; $i < 256; $i++) {
@@ -693,97 +640,86 @@ abstract class SimpleCacheTest extends TestCase
         $array = ['a' => 'foo', 2 => 'bar'];
         $this->cache->set('key', $data);
         $result = $this->cache->get('key');
-        $this->assertTrue($data === $result, 'Binary data must survive a round trip.');
+        static::assertTrue($data === $result, 'Binary data must survive a round trip.');
     }
 
     /**
      * @dataProvider validKeys
      */
-    public function testSetValidKeys($key)
+    public function testSetValidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->set($key, 'foobar');
-        $this->assertEquals('foobar', $this->cache->get($key));
+        static::assertEquals('foobar', $this->cache->get($key));
     }
 
     /**
      * @dataProvider validKeys
      */
-    public function testSetMultipleValidKeys($key)
+    public function testSetMultipleValidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->setMultiple([$key => 'foobar']);
         $result = $this->cache->getMultiple([$key]);
-        $keys   = [];
+        $keys = [];
         foreach ($result as $i => $r) {
             $keys[] = $i;
-            $this->assertEquals($key, $i);
-            $this->assertEquals('foobar', $r);
+            static::assertEquals($key, $i);
+            static::assertEquals('foobar', $r);
         }
-        $this->assertSame([$key], $keys);
+        static::assertSame([$key], $keys);
     }
 
     /**
      * @dataProvider validData
      */
-    public function testSetValidData($data)
+    public function testSetValidData($data): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->cache->set('key', $data);
-        $this->assertEquals($data, $this->cache->get('key'));
+        static::assertEquals($data, $this->cache->get('key'));
     }
 
     /**
      * @dataProvider validData
      */
-    public function testSetMultipleValidData($data)
+    public function testSetMultipleValidData($data): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->cache->setMultiple(['key' => $data]);
-        $result = $this->cache->getMultiple(['key']);
-        $keys   = [];
-        foreach ($result as $i => $r) {
-            $keys[] = $i;
-            $this->assertEquals($data, $r);
+        $expected = ['key' => $data];
+        $this->cache->setMultiple($expected);
+        $actual = $this->cache->getMultiple(array_keys($expected));
+        $actualKeys = [];
+        foreach ($actual as $actualKey => $actualData) {
+            $actualKeys[] = $actualKey;
+            static::assertEquals($data, $actualData);
         }
-        $this->assertSame(['key'], $keys);
+        static::assertSame(array_keys($expected), $actualKeys);
     }
 
-    public function testObjectAsDefaultValue()
+    public function testObjectAsDefaultValue(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $obj      = new \stdClass();
+        $obj = new \stdClass();
         $obj->foo = 'value';
-        $this->assertEquals($obj, $this->cache->get('key', $obj));
+        static::assertEquals($obj, $this->cache->get('key', $obj));
     }
 
-    public function testObjectDoesNotChangeInCache()
+    public function testObjectDoesNotChangeInCache(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $obj      = new \stdClass();
+        $obj = new \stdClass();
         $obj->foo = 'value';
         $this->cache->set('key', $obj);
         $obj->foo = 'changed';
 
         $cacheObject = $this->cache->get('key');
-        $this->assertEquals('value', $cacheObject->foo, 'Object in cache should not have their values changed.');
+        static::assertEquals('value', $cacheObject->foo, 'Object in cache should not have their values changed.');
     }
 }

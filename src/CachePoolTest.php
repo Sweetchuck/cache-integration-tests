@@ -1,9 +1,12 @@
 <?php
 
-/*
+declare(strict_types = 1);
+
+/**
  * This file is part of php-cache organization.
  *
- * (c) 2015-2015 Aaron Scherer <aequasi@gmail.com>, Tobias Nyholm <tobias.nyholm@gmail.com>
+ * (c) 2015-2015 Aaron Scherer <aequasi@gmail.com>, Tobias Nyholm
+ * <tobias.nyholm@gmail.com>
  *
  * This source file is subject to the MIT license that is bundled
  * with this source code in the file LICENSE.
@@ -14,28 +17,26 @@ namespace Cache\IntegrationTests;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
+use Psr\Cache\InvalidArgumentException;
 
 abstract class CachePoolTest extends TestCase
 {
-    /**
-     * @type array with functionName => reason.
-     */
-    protected $skippedTests = [];
 
     /**
-     * @type CacheItemPoolInterface
+     * With functionName => reason.
+     *
+     * @phpstan-var array<string, string>
      */
-    protected $cache;
+    protected array $skippedTests = [];
 
-    /**
-     * @return CacheItemPoolInterface that is used in the tests
-     */
-    abstract public function createCachePool();
+    protected ?CacheItemPoolInterface $cache = null;
+
+    abstract public function createCachePool(): CacheItemPoolInterface;
 
     /**
      * @before
      */
-    public function setupService()
+    public function setupService(): void
     {
         $this->cache = $this->createCachePool();
     }
@@ -43,46 +44,41 @@ abstract class CachePoolTest extends TestCase
     /**
      * @after
      */
-    public function tearDownService()
+    public function tearDownService(): void
     {
-        if ($this->cache !== null) {
-            $this->cache->clear();
-        }
+        $this->cache?->clear();
     }
 
     /**
      * Data provider for invalid keys.
-     *
-     * @return array
      */
-    public static function invalidKeys()
+    public static function invalidKeys(): array
     {
-        return [
-            [true],
-            [false],
-            [null],
-            [2],
-            [2.5],
-            ['{str'],
-            ['rand{'],
-            ['rand{str'],
-            ['rand}str'],
-            ['rand(str'],
-            ['rand)str'],
-            ['rand/str'],
-            ['rand\\str'],
-            ['rand@str'],
-            ['rand:str'],
-            [new \stdClass()],
-            [['array']],
-        ];
+        $cases = [];
+
+        $invalidChars = ['{', '}', '(', ')', '/', '\\', '@', ':'];
+        foreach ($invalidChars as $char) {
+            $cases += [
+                "string forbidden char $char only" => [$char],
+                "string forbidden char $char begin" => ["{$char}foo"],
+                "string forbidden char $char middle" => ["foo{$char}bar"],
+                "string forbidden char $char end" => ["foo{$char}"],
+            ];
+        }
+
+        return $cases;
     }
 
-    public function testBasicUsage()
+    protected function skipIf(string $function): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
+        if (isset($this->skippedTests[$function])) {
+            static::markTestSkipped($this->skippedTests[$function]);
         }
+    }
+
+    public function testBasicUsage(): void
+    {
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('4711');
@@ -93,92 +89,93 @@ abstract class CachePoolTest extends TestCase
         $this->cache->save($item);
 
         $fooItem = $this->cache->getItem('key');
-        $this->assertTrue($fooItem->isHit());
-        $this->assertEquals('4711', $fooItem->get());
+        static::assertTrue($fooItem->isHit());
+        static::assertEquals('4711', $fooItem->get());
 
         $barItem = $this->cache->getItem('key2');
-        $this->assertTrue($barItem->isHit());
-        $this->assertEquals('4712', $barItem->get());
+        static::assertTrue($barItem->isHit());
+        static::assertEquals('4712', $barItem->get());
 
-        // Remove 'key' and make sure 'key2' is still there
+        // Remove 'key' and make sure 'key2' is still there.
         $this->cache->deleteItem('key');
-        $this->assertFalse($this->cache->getItem('key')->isHit());
-        $this->assertTrue($this->cache->getItem('key2')->isHit());
+        static::assertFalse($this->cache->getItem('key')->isHit());
+        static::assertTrue($this->cache->getItem('key2')->isHit());
 
-        // Remove everything
+        // Remove everything.
         $this->cache->clear();
-        $this->assertFalse($this->cache->getItem('key')->isHit());
-        $this->assertFalse($this->cache->getItem('key2')->isHit());
+        static::assertFalse($this->cache->getItem('key')->isHit());
+        static::assertFalse($this->cache->getItem('key2')->isHit());
     }
 
-    public function testBasicUsageWithLongKey()
+    public function testBasicUsageWithLongKey(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $pool = $this->createCachePool();
 
         $key = str_repeat('a', 300);
 
         $item = $pool->getItem($key);
-        $this->assertFalse($item->isHit());
-        $this->assertSame($key, $item->getKey());
+        static::assertFalse($item->isHit());
+        static::assertSame($key, $item->getKey());
 
         $item->set('value');
-        $this->assertTrue($pool->save($item));
+        static::assertTrue($pool->save($item));
 
         $item = $pool->getItem($key);
-        $this->assertTrue($item->isHit());
-        $this->assertSame($key, $item->getKey());
-        $this->assertSame('value', $item->get());
+        static::assertTrue($item->isHit());
+        static::assertSame($key, $item->getKey());
+        static::assertSame('value', $item->get());
 
-        $this->assertTrue($pool->deleteItem($key));
+        static::assertTrue($pool->deleteItem($key));
 
         $item = $pool->getItem($key);
-        $this->assertFalse($item->isHit());
+        static::assertFalse($item->isHit());
     }
 
-    public function testItemModifiersReturnsStatic()
+    public function testItemModifiersReturnsStatic(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
-        $this->assertSame($item, $item->set('4711'));
-        $this->assertSame($item, $item->expiresAfter(2));
-        $this->assertSame($item, $item->expiresAt(new \DateTime('+2hours')));
+        static::assertSame($item, $item->set('4711'));
+        static::assertSame($item, $item->expiresAfter(2));
+        static::assertSame($item, $item->expiresAt(new \DateTime('+2hours')));
     }
 
-    public function testGetItem()
+    public function testGetItem(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
         $this->cache->save($item);
 
-        // get existing item
+        // Get existing item.
         $item = $this->cache->getItem('key');
-        $this->assertEquals('value', $item->get(), 'A stored item must be returned from cached.');
-        $this->assertEquals('key', $item->getKey(), 'Cache key can not change.');
+        static::assertEquals(
+            'value',
+            $item->get(),
+            'A stored item must be returned from cached.',
+        );
 
-        // get non-existent item
+        static::assertEquals(
+            'key',
+            $item->getKey(),
+            'Cache key can not change.',
+        );
+
+        // Get non-existent item.
         $item = $this->cache->getItem('key2');
-        $this->assertFalse($item->isHit());
-        $this->assertNull($item->get(), "Item's value must be null when isHit is false.");
+        static::assertFalse($item->isHit());
+        static::assertNull($item->get(), "Item's value must be null when isHit is false.");
     }
 
-    public function testGetItems()
+    public function testGetItems(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $keys  = ['foo', 'bar', 'baz'];
+        $keys = ['foo', 'bar', 'baz'];
         $items = $this->cache->getItems($keys);
 
         $count = 0;
@@ -191,7 +188,7 @@ abstract class CachePoolTest extends TestCase
             $count++;
         }
 
-        $this->assertSame(3, $count);
+        static::assertSame(3, $count);
 
         $keys[] = 'biz';
         /** @type CacheItemInterface[] $items */
@@ -199,11 +196,21 @@ abstract class CachePoolTest extends TestCase
         $count = 0;
         foreach ($items as $key => $item) {
             $itemKey = $item->getKey();
-            $this->assertEquals($itemKey, $key, 'Keys must be preserved when fetching multiple items');
-            $this->assertEquals($key !== 'biz', $item->isHit());
-            $this->assertTrue(in_array($key, $keys), 'Cache key can not change.');
+            static::assertEquals(
+                $itemKey,
+                $key,
+                'Keys must be preserved when fetching multiple items',
+            );
 
-            // Remove $key for $keys
+            static::assertEquals($key !== 'biz', $item->isHit());
+            static::assertContains(
+                $key,
+                $keys,
+                'Cache key can not change.',
+            );
+
+            // Remove $key for $keys.
+            // @todo Use array_search().
             foreach ($keys as $k => $v) {
                 if ($v === $key) {
                     unset($keys[$k]);
@@ -213,17 +220,15 @@ abstract class CachePoolTest extends TestCase
             $count++;
         }
 
-        $this->assertSame(4, $count);
+        static::assertSame(4, $count);
     }
 
-    public function testGetItemsEmpty()
+    public function testGetItemsEmpty(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $items = $this->cache->getItems([]);
-        $this->assertTrue(
+        static::assertTrue(
             is_array($items) || $items instanceof \Traversable,
             'A call to getItems with an empty array must always return an array or \Traversable.'
         );
@@ -233,31 +238,27 @@ abstract class CachePoolTest extends TestCase
             $count++;
         }
 
-        $this->assertSame(0, $count);
+        static::assertSame(0, $count);
     }
 
-    public function testHasItem()
+    public function testHasItem(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
         $this->cache->save($item);
 
-        // has existing item
-        $this->assertTrue($this->cache->hasItem('key'));
+        // Has existing item.
+        static::assertTrue($this->cache->hasItem('key'));
 
-        // has non-existent item
-        $this->assertFalse($this->cache->hasItem('key2'));
+        // Has non-existent item.
+        static::assertFalse($this->cache->hasItem('key2'));
     }
 
-    public function testClear()
+    public function testClear(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -265,16 +266,20 @@ abstract class CachePoolTest extends TestCase
 
         $return = $this->cache->clear();
 
-        $this->assertTrue($return, 'clear() must return true if cache was cleared. ');
-        $this->assertFalse($this->cache->getItem('key')->isHit(), 'No item should be a hit after the cache is cleared. ');
-        $this->assertFalse($this->cache->hasItem('key2'), 'The cache pool should be empty after it is cleared.');
+        static::assertTrue($return, 'clear() must return true if cache was cleared.');
+        static::assertFalse(
+            $this->cache->getItem('key')->isHit(),
+            'No item should be a hit after the cache is cleared.',
+        );
+        static::assertFalse(
+            $this->cache->hasItem('key2'),
+            'The cache pool should be empty after it is cleared.',
+        );
     }
 
-    public function testClearWithDeferredItems()
+    public function testClearWithDeferredItems(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -283,90 +288,94 @@ abstract class CachePoolTest extends TestCase
         $this->cache->clear();
         $this->cache->commit();
 
-        $this->assertFalse($this->cache->getItem('key')->isHit(), 'Deferred items must be cleared on clear(). ');
+        static::assertFalse(
+            $this->cache->getItem('key')->isHit(),
+            'Deferred items must be cleared on clear().',
+        );
     }
 
-    public function testDeleteItem()
+    public function testDeleteItem(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
         $this->cache->save($item);
 
-        $this->assertTrue($this->cache->deleteItem('key'));
-        $this->assertFalse($this->cache->getItem('key')->isHit(), 'A deleted item should not be a hit.');
-        $this->assertFalse($this->cache->hasItem('key'), 'A deleted item should not be a in cache.');
+        static::assertTrue($this->cache->deleteItem('key'));
 
-        $this->assertTrue($this->cache->deleteItem('key2'), 'Deleting an item that does not exist should return true.');
+        static::assertFalse(
+            $this->cache->getItem('key')->isHit(),
+            'A deleted item should not be a hit.',
+        );
+
+        static::assertFalse(
+            $this->cache->hasItem('key'),
+            'A deleted item should not be a in cache.',
+        );
+
+        static::assertTrue(
+            $this->cache->deleteItem('key2'),
+            'Deleting an item that does not exist should return true.',
+        );
     }
 
-    public function testDeleteItems()
+    public function testDeleteItems(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $items = $this->cache->getItems(['foo', 'bar', 'baz']);
 
-        /** @type CacheItemInterface $item */
+        /** @var \Psr\Cache\CacheItemInterface $item */
         foreach ($items as $idx => $item) {
             $item->set($idx);
             $this->cache->save($item);
         }
 
         // All should be a hit but 'biz'
-        $this->assertTrue($this->cache->getItem('foo')->isHit());
-        $this->assertTrue($this->cache->getItem('bar')->isHit());
-        $this->assertTrue($this->cache->getItem('baz')->isHit());
-        $this->assertFalse($this->cache->getItem('biz')->isHit());
+        static::assertTrue($this->cache->getItem('foo')->isHit());
+        static::assertTrue($this->cache->getItem('bar')->isHit());
+        static::assertTrue($this->cache->getItem('baz')->isHit());
+        static::assertFalse($this->cache->getItem('biz')->isHit());
 
         $return = $this->cache->deleteItems(['foo', 'bar', 'biz']);
-        $this->assertTrue($return);
+        static::assertTrue($return);
 
-        $this->assertFalse($this->cache->getItem('foo')->isHit());
-        $this->assertFalse($this->cache->getItem('bar')->isHit());
-        $this->assertTrue($this->cache->getItem('baz')->isHit());
-        $this->assertFalse($this->cache->getItem('biz')->isHit());
+        static::assertFalse($this->cache->getItem('foo')->isHit());
+        static::assertFalse($this->cache->getItem('bar')->isHit());
+        static::assertTrue($this->cache->getItem('baz')->isHit());
+        static::assertFalse($this->cache->getItem('biz')->isHit());
     }
 
-    public function testSave()
+    public function testSave(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
         $return = $this->cache->save($item);
 
-        $this->assertTrue($return, 'save() should return true when items are saved.');
-        $this->assertEquals('value', $this->cache->getItem('key')->get());
+        static::assertTrue($return, 'save() should return true when items are saved.');
+        static::assertSame('value', $this->cache->getItem('key')->get());
     }
 
-    public function testSaveExpired()
+    public function testSaveExpired(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
-        $item->expiresAt(\DateTime::createFromFormat('U', time() + 10));
+        $item->expiresAt(\DateTime::createFromFormat('U', (string) (time() + 10)));
         $this->cache->save($item);
-        $item->expiresAt(\DateTime::createFromFormat('U', time() - 1));
+        $item->expiresAt(\DateTime::createFromFormat('U', (string) (time() - 1)));
         $this->cache->save($item);
         $item = $this->cache->getItem('key');
-        $this->assertFalse($item->isHit(), 'Cache should not save expired items');
+        static::assertFalse($item->isHit(), 'Cache should not save expired items');
     }
 
-    public function testSaveWithoutExpire()
+    public function testSaveWithoutExpire(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('test_ttl_null');
         $item->set('data');
@@ -376,90 +385,97 @@ abstract class CachePoolTest extends TestCase
         $pool = $this->createCachePool();
         $item = $pool->getItem('test_ttl_null');
 
-        $this->assertTrue($item->isHit(), 'Cache should have retrieved the items');
-        $this->assertEquals('data', $item->get());
+        static::assertTrue($item->isHit(), 'Cache should have retrieved the items');
+        static::assertEquals('data', $item->get());
     }
 
-    public function testDeferredSave()
+    public function testDeferredSave(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('4711');
         $return = $this->cache->saveDeferred($item);
-        $this->assertTrue($return, 'save() should return true when items are saved.');
+        static::assertTrue($return, 'save() should return true when items are saved.');
 
         $item = $this->cache->getItem('key2');
         $item->set('4712');
         $this->cache->saveDeferred($item);
 
-        // They are not saved yet but should be a hit
-        $this->assertTrue($this->cache->hasItem('key'), 'Deferred items should be considered as a part of the cache even before they are committed');
-        $this->assertTrue($this->cache->getItem('key')->isHit(), 'Deferred items should be a hit even before they are committed');
-        $this->assertTrue($this->cache->getItem('key2')->isHit());
+        // They are not saved yet but should be a hit.
+        static::assertTrue(
+            $this->cache->hasItem('key'),
+            'Deferred items should be considered as a part of the cache even before they are committed',
+        );
+        static::assertTrue(
+            $this->cache->getItem('key')->isHit(),
+            'Deferred items should be a hit even before they are committed',
+        );
+        static::assertTrue($this->cache->getItem('key2')->isHit());
 
         $this->cache->commit();
 
-        // They should be a hit after the commit as well
-        $this->assertTrue($this->cache->getItem('key')->isHit());
-        $this->assertTrue($this->cache->getItem('key2')->isHit());
+        // They should be a hit after the commit as well.
+        static::assertTrue($this->cache->getItem('key')->isHit());
+        static::assertTrue($this->cache->getItem('key2')->isHit());
     }
 
-    public function testDeferredExpired()
+    public function testDeferredExpired(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('4711');
-        $item->expiresAt(\DateTime::createFromFormat('U', time() - 1));
+        $item->expiresAt(\DateTime::createFromFormat('U', (string) (time() - 1)));
         $this->cache->saveDeferred($item);
 
-        $this->assertFalse($this->cache->hasItem('key'), 'Cache should not have expired deferred item');
+        static::assertFalse($this->cache->hasItem('key'), 'Cache should not have expired deferred item');
         $this->cache->commit();
         $item = $this->cache->getItem('key');
-        $this->assertFalse($item->isHit(), 'Cache should not save expired items');
+        static::assertFalse($item->isHit(), 'Cache should not save expired items');
     }
 
-    public function testDeleteDeferredItem()
+    public function testDeleteDeferredItem(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('4711');
         $this->cache->saveDeferred($item);
-        $this->assertTrue($this->cache->getItem('key')->isHit());
+        static::assertTrue($this->cache->getItem('key')->isHit());
 
         $this->cache->deleteItem('key');
-        $this->assertFalse($this->cache->hasItem('key'), 'You must be able to delete a deferred item before committed. ');
-        $this->assertFalse($this->cache->getItem('key')->isHit(), 'You must be able to delete a deferred item before committed. ');
+        static::assertFalse(
+            $this->cache->hasItem('key'),
+            'You must be able to delete a deferred item before committed.',
+        );
+        static::assertFalse(
+            $this->cache->getItem('key')->isHit(),
+            'You must be able to delete a deferred item before committed.',
+        );
 
         $this->cache->commit();
-        $this->assertFalse($this->cache->hasItem('key'), 'A deleted item should not reappear after commit. ');
-        $this->assertFalse($this->cache->getItem('key')->isHit(), 'A deleted item should not reappear after commit. ');
+        static::assertFalse($this->cache->hasItem('key'), 'A deleted item should not reappear after commit.');
+        static::assertFalse($this->cache->getItem('key')->isHit(), 'A deleted item should not reappear after commit.');
     }
 
-    public function testDeferredSaveWithoutCommit()
+    public function testDeferredSaveWithoutCommit(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $this->prepareDeferredSaveWithoutCommit();
         gc_collect_cycles();
 
         $cache = $this->createCachePool();
-        $this->assertTrue($cache->getItem('key')->isHit(), 'A deferred item should automatically be committed on CachePool::__destruct().');
+        static::assertTrue(
+            $cache->getItem('key')->isHit(),
+            'A deferred item should automatically be committed on CachePool::__destruct().',
+        );
     }
 
-    private function prepareDeferredSaveWithoutCommit()
+    private function prepareDeferredSaveWithoutCommit(): void
     {
-        $cache       = $this->cache;
+        $cache = $this->cache;
         $this->cache = null;
 
         $item = $cache->getItem('key');
@@ -467,22 +483,20 @@ abstract class CachePoolTest extends TestCase
         $cache->saveDeferred($item);
     }
 
-    public function testCommit()
+    public function testCommit(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
         $this->cache->saveDeferred($item);
         $return = $this->cache->commit();
 
-        $this->assertTrue($return, 'commit() should return true on successful commit. ');
-        $this->assertEquals('value', $this->cache->getItem('key')->get());
+        static::assertTrue($return, 'commit() should return true on successful commit.');
+        static::assertEquals('value', $this->cache->getItem('key')->get());
 
         $return = $this->cache->commit();
-        $this->assertTrue($return, 'commit() should return true even if no items were deferred. ');
+        static::assertTrue($return, 'commit() should return true even if no items were deferred.');
     }
 
     /**
@@ -490,9 +504,7 @@ abstract class CachePoolTest extends TestCase
      */
     public function testExpiration()
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -501,15 +513,13 @@ abstract class CachePoolTest extends TestCase
 
         sleep(3);
         $item = $this->cache->getItem('key');
-        $this->assertFalse($item->isHit());
-        $this->assertNull($item->get(), "Item's value must be null when isHit() is false.");
+        static::assertFalse($item->isHit());
+        static::assertNull($item->get(), "Item's value must be null when isHit() is false.");
     }
 
-    public function testExpiresAt()
+    public function testExpiresAt(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -517,14 +527,12 @@ abstract class CachePoolTest extends TestCase
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue($item->isHit());
+        static::assertTrue($item->isHit());
     }
 
-    public function testExpiresAtWithNull()
+    public function testExpiresAtWithNull(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -532,14 +540,12 @@ abstract class CachePoolTest extends TestCase
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue($item->isHit());
+        static::assertTrue($item->isHit());
     }
 
-    public function testExpiresAfterWithNull()
+    public function testExpiresAfterWithNull(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -547,208 +553,202 @@ abstract class CachePoolTest extends TestCase
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue($item->isHit());
+        static::assertTrue($item->isHit());
     }
 
-    public function testKeyLength()
+    public function testKeyLength(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $key  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.';
+        $key
+            = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.';
         $item = $this->cache->getItem($key);
         $item->set('value');
-        $this->assertTrue($this->cache->save($item), 'The implementation does not support a valid cache key');
-
-        $this->assertTrue($this->cache->hasItem($key));
+        static::assertTrue($this->cache->save($item), 'The implementation does not support a valid cache key');
+        static::assertTrue($this->cache->hasItem($key));
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testGetItemInvalidKeys($key)
+    public function testGetItemInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->expectException('Psr\Cache\InvalidArgumentException');
+        static::expectException(InvalidArgumentException::class);
         $this->cache->getItem($key);
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testGetItemsInvalidKeys($key)
+    public function testGetItemsInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->expectException('Psr\Cache\InvalidArgumentException');
+        static::expectException(InvalidArgumentException::class);
         $this->cache->getItems(['key1', $key, 'key2']);
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testHasItemInvalidKeys($key)
+    public function testHasItemInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->expectException('Psr\Cache\InvalidArgumentException');
+        static::expectException(InvalidArgumentException::class);
         $this->cache->hasItem($key);
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testDeleteItemInvalidKeys($key)
+    public function testDeleteItemInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->expectException('Psr\Cache\InvalidArgumentException');
+        static::expectException(InvalidArgumentException::class);
         $this->cache->deleteItem($key);
     }
 
     /**
      * @dataProvider invalidKeys
      */
-    public function testDeleteItemsInvalidKeys($key)
+    public function testDeleteItemsInvalidKeys($key): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $this->expectException('Psr\Cache\InvalidArgumentException');
+        static::expectException(InvalidArgumentException::class);
         $this->cache->deleteItems(['key1', $key, 'key2']);
     }
 
-    public function testDataTypeString()
+    public function testDataTypeString(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('5');
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue('5' === $item->get(), 'Wrong data type. If we store a string we must get an string back.');
-        $this->assertTrue(is_string($item->get()), 'Wrong data type. If we store a string we must get an string back.');
+        static::assertSame(
+            '5',
+            $item->get(),
+            'Wrong data type. If we store a string we must get an string back.',
+        );
     }
 
-    public function testDataTypeInteger()
+    public function testDataTypeInteger(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set(5);
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue(5 === $item->get(), 'Wrong data type. If we store an int we must get an int back.');
-        $this->assertTrue(is_int($item->get()), 'Wrong data type. If we store an int we must get an int back.');
+        static::assertSame(
+            5,
+            $item->get(),
+            'Wrong data type. If we store an int we must get an int back.',
+        );
     }
 
-    public function testDataTypeNull()
+    public function testDataTypeNull(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set(null);
         $this->cache->save($item);
 
-        $this->assertTrue($this->cache->hasItem('key'), 'Null is a perfectly fine cache value. hasItem() should return true when null are stored. ');
+        static::assertTrue(
+            $this->cache->hasItem('key'),
+            'Null is a perfectly fine cache value. hasItem() should return true when null are stored.'
+        );
         $item = $this->cache->getItem('key');
-        $this->assertTrue(null === $item->get(), 'Wrong data type. If we store null we must get an null back.');
-        $this->assertTrue(is_null($item->get()), 'Wrong data type. If we store null we must get an null back.');
-        $this->assertTrue($item->isHit(), 'isHit() should return true when null are stored. ');
+        static::assertNull(
+            $item->get(),
+            'Wrong data type. If we store null we must get an null back.',
+        );
+        static::assertTrue(
+            $item->isHit(),
+            'isHit() should return true when null are stored.',
+        );
     }
 
-    public function testDataTypeFloat()
+    public function testDataTypeFloat(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $float = 1.23456789;
-        $item  = $this->cache->getItem('key');
+        $item = $this->cache->getItem('key');
         $item->set($float);
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue(is_float($item->get()), 'Wrong data type. If we store float we must get an float back.');
-        $this->assertEquals($float, $item->get());
-        $this->assertTrue($item->isHit(), 'isHit() should return true when float are stored. ');
+        static::assertSame(
+            $float,
+            $item->get(),
+            'Wrong data type. If we store float we must get an float back.',
+        );
+        static::assertTrue($item->isHit(), 'isHit() should return true when float are stored.');
     }
 
-    public function testDataTypeBoolean()
+    public function testDataTypeBoolean(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set(true);
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue(is_bool($item->get()), 'Wrong data type. If we store boolean we must get an boolean back.');
-        $this->assertTrue($item->get());
-        $this->assertTrue($item->isHit(), 'isHit() should return true when true are stored. ');
+        static::assertTrue($item->get(), 'Wrong data type. If we store boolean we must get an boolean back.');
+        static::assertTrue($item->isHit(), 'isHit() should return true when true are stored.');
+
+        $item->set(false);
+        $this->cache->save($item);
+
+        $item = $this->cache->getItem('key');
+        static::assertFalse($item->get(), 'Wrong data type. If we store boolean we must get an boolean back.');
+        static::assertTrue($item->isHit(), 'isHit() should return true when true are stored.');
     }
 
-    public function testDataTypeArray()
+    public function testDataTypeArray(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $array = ['a' => 'foo', 2 => 'bar'];
-        $item  = $this->cache->getItem('key');
+        $item = $this->cache->getItem('key');
         $item->set($array);
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue(is_array($item->get()), 'Wrong data type. If we store array we must get an array back.');
-        $this->assertEquals($array, $item->get());
-        $this->assertTrue($item->isHit(), 'isHit() should return true when array are stored. ');
+        static::assertSame($array, $item->get(), 'Wrong data type. If we store array we must get an array back.');
+        static::assertTrue($item->isHit(), 'isHit() should return true when array are stored.');
     }
 
-    public function testDataTypeObject()
+    public function testDataTypeObject(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
-        $object    = new \stdClass();
+        $object = new \stdClass();
         $object->a = 'foo';
-        $item      = $this->cache->getItem('key');
+        $item = $this->cache->getItem('key');
         $item->set($object);
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue(is_object($item->get()), 'Wrong data type. If we store object we must get an object back.');
-        $this->assertEquals($object, $item->get());
-        $this->assertTrue($item->isHit(), 'isHit() should return true when object are stored. ');
+        static::assertTrue(is_object($item->get()), 'Wrong data type. If we store object we must get an object back.');
+        static::assertEquals($object, $item->get());
+        static::assertTrue($item->isHit(), 'isHit() should return true when object are stored.');
     }
 
-    public function testBinaryData()
+    public function testBinaryData(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $data = '';
         for ($i = 0; $i < 256; $i++) {
@@ -760,28 +760,28 @@ abstract class CachePoolTest extends TestCase
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue($data === $item->get(), 'Binary data must survive a round trip.');
+        static::assertSame(
+            $data,
+            $item->get(),
+            'Binary data must survive a round trip.',
+        );
     }
 
-    public function testIsHit()
+    public function testIsHit(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
         $this->cache->save($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertTrue($item->isHit());
+        static::assertTrue($item->isHit());
     }
 
-    public function testIsHitDeferred()
+    public function testIsHitDeferred(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -789,18 +789,16 @@ abstract class CachePoolTest extends TestCase
 
         // Test accessing the value before it is committed
         $item = $this->cache->getItem('key');
-        $this->assertTrue($item->isHit());
+        static::assertTrue($item->isHit());
 
         $this->cache->commit();
         $item = $this->cache->getItem('key');
-        $this->assertTrue($item->isHit());
+        static::assertTrue($item->isHit());
     }
 
-    public function testSaveDeferredWhenChangingValues()
+    public function testSaveDeferredWhenChangingValues(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -810,18 +808,24 @@ abstract class CachePoolTest extends TestCase
         $item->set('new value');
 
         $item = $this->cache->getItem('key');
-        $this->assertEquals('value', $item->get(), 'Items that is put in the deferred queue should not get their values changed');
+        static::assertSame(
+            'value',
+            $item->get(),
+            'Items that is put in the deferred queue should not get their values changed',
+        );
 
         $this->cache->commit();
         $item = $this->cache->getItem('key');
-        $this->assertEquals('value', $item->get(), 'Items that is put in the deferred queue should not get their values changed');
+        static::assertSame(
+            'value',
+            $item->get(),
+            'Items that is put in the deferred queue should not get their values changed',
+        );
     }
 
-    public function testSaveDeferredOverwrite()
+    public function testSaveDeferredOverwrite(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -832,36 +836,36 @@ abstract class CachePoolTest extends TestCase
         $this->cache->saveDeferred($item);
 
         $item = $this->cache->getItem('key');
-        $this->assertEquals('new value', $item->get());
+        static::assertSame('new value', $item->get());
 
         $this->cache->commit();
         $item = $this->cache->getItem('key');
-        $this->assertEquals('new value', $item->get());
+        static::assertSame('new value', $item->get());
     }
 
-    public function testSavingObject()
+    public function testSavingObject(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set(new \DateTime());
         $this->cache->save($item);
 
-        $item  = $this->cache->getItem('key');
+        $item = $this->cache->getItem('key');
         $value = $item->get();
-        $this->assertInstanceOf('DateTime', $value, 'You must be able to store objects in cache.');
+        static::assertInstanceOf(
+            \DateTime::class,
+            $value,
+            'You must be able to store objects in cache.',
+        );
     }
 
     /**
      * @medium
      */
-    public function testHasItemReturnsFalseWhenDeferredItemIsExpired()
+    public function testHasItemReturnsFalseWhenDeferredItemIsExpired(): void
     {
-        if (isset($this->skippedTests[__FUNCTION__])) {
-            $this->markTestSkipped($this->skippedTests[__FUNCTION__]);
-        }
+        $this->skipIf(__FUNCTION__);
 
         $item = $this->cache->getItem('key');
         $item->set('value');
@@ -869,6 +873,6 @@ abstract class CachePoolTest extends TestCase
         $this->cache->saveDeferred($item);
 
         sleep(3);
-        $this->assertFalse($this->cache->hasItem('key'));
+        static::assertFalse($this->cache->hasItem('key'));
     }
 }
