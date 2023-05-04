@@ -47,7 +47,10 @@
         "php": ">=8.1"
     },
     "require-dev": {
-        "cache/cache": "3.x-dev",
+        "cache/illuminate-adapter": "3.x-dev",
+        "cache/redis-adapter": "3.x-dev",
+        "cache/simple-cache-bridge": "3.x-dev",
+        "cache/tag-interop": "3.x-dev",
         "illuminate/cache": "^10.0",
         "mockery/mockery": "^1.0",
         "phpunit/phpunit": "^10.0",
@@ -62,6 +65,10 @@
     },
     "autoload-dev": {
         "psr-4": {
+            "Cache\\Adapter\\Illuminate\\Tests\\": "vendor/cache/illuminate-adapter/tests/src/",
+            "Cache\\Adapter\\Redis\\Tests\\": "vendor/cache/redis-adapter/tests/src/",
+            "Cache\\Bridge\\SimpleCache\\Tests\\": "vendor/cache/simple-cache-bridge/tests/src/",
+            "Symfony\\Component\\Cache\\Tests\\": "vendor/symfony/cache/Tests/",
             "Cache\\IntegrationTests\\Test\\": "tests/src/"
         }
     },

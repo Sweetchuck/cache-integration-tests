@@ -2,9 +2,9 @@
 <phpunit
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
-    colors="true"
     bootstrap="vendor/autoload.php"
-    cacheDirectory=".phpunit.cache">
+    cacheDirectory="./.cache/"
+    colors="true">
 
     <php>
         <env name="CACHE_REDIS_SERVER1_HOST" value="127.0.0.1" />
@@ -23,14 +23,20 @@
         <env name="CACHE_REDIS_CLUSTER_SEED3_DB" value="1" />
     </php>
 
+    <source>
+        <include>
+            <directory>src/</directory>
+        </include>
+    </source>
+
     <testsuites>
         <testsuite name="PHPCache">
-            <directory>./vendor/cache/cache/src/Adapter/Redis/Tests/</directory>
-            <directory>./vendor/cache/cache/src/Bridge/SimpleCache/Tests/</directory>
+            <directory>./vendor/cache/redis-adapter/tests/src/Acceptance/</directory>
+            <directory>./vendor/cache/simple-cache-bridge/tests/src/Acceptance/</directory>
         </testsuite>
 
         <testsuite name="Laravel">
-            <directory>./vendor/cache/cache/src/Adapter/Illuminate/Tests/</directory>
+            <directory>./vendor/cache/illuminate-adapter/tests/src/Acceptance</directory>
         </testsuite>
 
         <testsuite name="Symfony">
@@ -43,10 +49,6 @@
     </testsuites>
 
     <coverage>
-        <include>
-            <directory>./src/</directory>
-        </include>
-
         <report>
             <clover outputFile="reports/machine/coverage/phpunit.xml" />
             <html outputDirectory="reports/human/coverage/html" />
